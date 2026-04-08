@@ -1,0 +1,14 @@
+- alias: "Ventilation: set fan speed from CO2"
+  trigger:
+    - platform: state
+      entity_id: sensor.fan_speed_target
+  condition:
+    - condition: template
+      value_template: >
+        {{ trigger.to_state.state not in ['unknown', 'unavailable'] }}
+  action:
+    - service: light.turn_on
+      target:
+        entity_id: light.shelly0110dimg3_REPLACE_ME
+      data:
+        brightness_pct: "{{ states('sensor.fan_speed_target') | int }}"
