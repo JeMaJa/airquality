@@ -1,0 +1,54 @@
+
+# Loads default set of integrations. Do not remove.
+default_config:
+
+# Load frontend themes from the themes folder
+frontend:
+  themes: !include_dir_merge_named themes
+
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml
+sensor:
+  - platform: statistics
+    name: "CO2 alpstuga 2 smooth"
+    entity_id: sensor.alpstuga_air_quality_2_co2
+    state_characteristic: mean
+    max_age:
+      minutes: 2
+    sampling_size: 20
+  - platform: statistics
+    name: "CO2 alpstuga 1 smooth"
+    entity_id: sensor.alpstuga_air_quality_moni_co2
+    state_characteristic: mean
+    max_age:
+      minutes: 2
+    sampling_size: 20
+
+
+template:
+  - sensor:
+      - name: "CO2 worst room"
+        unit_of_measurement: "ppm"
+        state: >
+          {{ [
+            states('sensor.co2_alpstuga_1_smooth') | float(0),
+            states('sensor.co2_alpstuga_2_smooth') | float(0)
+          ] | max | round(0) | int }}
+
+      - name: "Fan speed target"
+        unit_of_measurement: "%"
+        state: >
+          {% set ppm     = states('sensor.co2_worst_room') | float(0) %}
+          {% set ppm_max = 2000 %}
+          {{ [(ppm / ppm_max * 100), 100] | min | round(1) }}
+  - sensor:
+      - name: "Ventilation signal"
+        unit_of_measurement: "%"
+        state: >
+          {% set b = state_attr('light.shelly0110dimg3_REPLACE_ME', 'brightness') %}
+          {% if b is not none %}
+            {{ (b / 255 * 100) | round(0) }}
+          {% else %}
+            0
+          {% endif %}

@@ -1,4 +1,3 @@
-
 # Loads default set of integrations. Do not remove.
 default_config:
 
@@ -9,22 +8,27 @@ frontend:
 automation: !include automations.yaml
 script: !include scripts.yaml
 scene: !include scenes.yaml
+
+input_boolean:
+  pid_mode:
+    name: PID Modus (STEER)
+    icon: mdi:fan-auto
+
 sensor:
   - platform: statistics
     name: "CO2 alpstuga 2 smooth"
     entity_id: sensor.alpstuga_air_quality_2_co2
     state_characteristic: mean
     max_age:
-      minutes: 2
-    sampling_size: 20
+      minutes: 4
+    sampling_size: 40
   - platform: statistics
     name: "CO2 alpstuga 1 smooth"
     entity_id: sensor.alpstuga_air_quality_moni_co2
     state_characteristic: mean
     max_age:
-      minutes: 2
-    sampling_size: 20
-
+      minutes: 4
+    sampling_size: 40
 
 template:
   - sensor:
@@ -42,8 +46,9 @@ template:
           {% set ppm     = states('sensor.co2_worst_room') | float(0) %}
           {% set ppm_max = 2000 %}
           {{ [(ppm / ppm_max * 100), 100] | min | round(1) }}
+
   - sensor:
-      - name: "Ventilation signal"
+      - name: "Ventilatie signaal"
         unit_of_measurement: "%"
         state: >
           {% set b = state_attr('light.shelly0110dimg3_REPLACE_ME', 'brightness') %}
@@ -52,3 +57,77 @@ template:
           {% else %}
             0
           {% endif %}
+
+      - name: "PID Error"
+        unit_of_measurement: "ppm"
+        state: "{{ (states('sensor.co2_worst_room') | float(0)) - (states('input_number.pid_setpoint') | float(800)) }}"
+
+      - name: "PID Output"
+        unit_of_measurement: "%"
+        state: "{{ states('input_number.pid_previous_output') | float(0) | round(1) }}"
+
+      - name: "PID Integral"
+        state: "{{ states('input_number.pid_integral') | float(0) | round(1) }}"
+
+      - name: "Debiet vraag"
+        unit_of_measurement: "m³/h"
+        state: >
+          {% set pct = states('sensor.pid_output') | float(0) %}
+          {{ (200 + pct / 100 * 250) | round(0) }}
+
+input_number:
+  pid_setpoint:
+    name: CO2 Setpoint
+    min: 425
+    max: 1200
+    step: 25
+    initial: 950
+    unit_of_measurement: "ppm"
+
+  pid_kp:
+    name: PID Kp
+    min: 0
+    max: 5
+    step: 0.01
+    initial: 0.15
+    mode: box
+
+  pid_ki:
+    name: PID Ki
+    min: 0
+    max: 0.5
+    step: 0.001
+    initial: 0.02
+    mode: box
+
+  pid_kd:
+    name: PID Kd
+    min: 0
+    max: 5
+    step: 0.01
+    initial: 0.0
+    mode: box
+
+  pid_integral:
+    name: PID Integral
+    min: 0
+    max: 4000
+    step: 0.01
+    initial: 0
+    mode: box
+
+  pid_previous_error:
+    name: PID Previous Error
+    min: -2000
+    max: 2000
+    step: 0.01
+    initial: 0
+    mode: box
+
+  pid_previous_output:
+    name: PID Previous Output
+    min: 0
+    max: 100
+    step: 0.01
+    initial: 0
+    mode: box

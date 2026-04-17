@@ -1,14 +1,79 @@
-- alias: "Ventilation: set fan speed from CO2"
+- id: pid_co2_controller
+  alias: "PID CO2 Controller"
+  description: "PID regelaar voor CO2-gestuurd ventileren via Shelly → Zehnder"
   trigger:
-    - platform: state
-      entity_id: sensor.fan_speed_target
+    - platform: time_pattern
+      seconds: "/30"
   condition:
     - condition: template
-      value_template: >
-        {{ trigger.to_state.state not in ['unknown', 'unavailable'] }}
+      value_template: "{{ states('sensor.co2_worst_room') | float(0) > 0 }}"
   action:
+    # --- Blok 1: lees alle inputs ---
+    - variables:
+        dt: 0.5
+        setpoint: "{{ states('input_number.pid_setpoint') | float(800) }}"
+        co2: "{{ states('sensor.co2_worst_room') | float(0) }}"
+        kp: "{{ states('input_number.pid_kp') | float(0.5) }}"
+        ki: "{{ states('input_number.pid_ki') | float(0.02) }}"
+        kd: "{{ states('input_number.pid_kd') | float(0) }}"
+        prev_error: "{{ states('input_number.pid_previous_error') | float(0) }}"
+        prev_integral: "{{ states('input_number.pid_integral') | float(0) }}"
+        prev_output: "{{ states('input_number.pid_previous_output') | float(50) }}"
+        max_step: 5
+    - variables:
+        error: "{{ co2 - setpoint }}"
+    - variables:
+        deadband: 25
+        integral_step: >
+          {% if error | float > 0 %}
+            {{ error * dt }}
+          {% elif error | float < -deadband %}
+            {{ error * dt }}
+          {% else %}
+            {{ 0 }}
+          {% endif %}
+        integral_raw: "{{ prev_integral + integral_step | float }}"
+        derivative: "{{ (error - prev_error) / dt }}"
+    - variables:
+        integral: "{{ [[0, integral_raw] | max, 4000] | min }}"
+# --- Blok 5: bereken PID output ---
+    - variables:
+        effective_kp: >
+          {% if error | float > 0 %}
+            {{ kp }}
+          {% else %}
+            {{ kp * 0.5 }}
+          {% endif %}
+        pid_output: "{{ [[0, effective_kp | float * error + ki * integral + kd * derivative] | max, 100] | min }}"  
+    - variables:
+        regelen_output: "{{ [[0, co2 / 2000 * 100] | max, 100] | min }}"
+        target_output: >
+          {% if is_state('input_boolean.pid_mode', 'on') %}
+            {{ pid_output }}
+          {% else %}
+            {{ regelen_output }}
+          {% endif %}
+    - variables:
+        delta: "{{ target_output | float - prev_output | float }}"
+        clamped_delta: "{{ [[-max_step, delta | float] | max, max_step] | min }}"
+        final_output: "{{ [[0, prev_output | float + clamped_delta | float] | max, 100] | min }}"
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.pid_integral
+      data:
+        value: "{{ integral }}"
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.pid_previous_error
+      data:
+        value: "{{ error }}"
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.pid_previous_output
+      data:
+        value: "{{ final_output }}"
     - service: light.turn_on
       target:
         entity_id: light.shelly0110dimg3_REPLACE_ME
       data:
-        brightness_pct: "{{ states('sensor.fan_speed_target') | int }}"
+        brightness_pct: "{{ final_output | int }}"
